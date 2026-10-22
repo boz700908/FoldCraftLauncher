@@ -12,6 +12,7 @@ import com.mio.util.getScreenHeight
 import com.mio.util.getScreenWidth
 import com.tungsten.fcl.R
 import com.tungsten.fcl.control.data.ControlViewGroup
+import com.tungsten.fcl.control.keyboard.FCLKeyAccessibilityService
 import com.tungsten.fcl.databinding.ItemMenuButtonBinding
 import com.tungsten.fcl.databinding.ItemMenuControlGroupBinding
 import com.tungsten.fcl.databinding.ItemMenuSeekbarBinding
@@ -317,12 +318,20 @@ class RightMenuAdapter(
                 menuSetting.imeToggleModifier,
                 RightMenuTag.IME_TOGGLE_MODIFIER
             ),
-            // 长按可跳到系统无障碍设置页，供用户给按键接管服务授权
+            // 长按可跳到系统无障碍设置页，供用户给按键接管服务授权。
+            // 授权状态在这里按需实时查询（服务实例存活时是快路径），因此用户在系统设置里
+            // 撤销授权后，再打开菜单就能立刻看到状态变化，不必重进游戏
             Row.SwitchRow(
                 R.string.menu_settings_accessibility_keyboard,
                 { menuSetting.isAccessibilityKeyboard },
                 RightMenuTag.ACCESSIBILITY_KEYBOARD,
-                longClick = true
+                longClick = true,
+                unavailableHint = if (menuSetting.isAccessibilityKeyboard
+                    && !FCLKeyAccessibilityService.isEnabled(context)) {
+                    context.getString(R.string.menu_settings_accessibility_keyboard_unauthorized)
+                } else {
+                    null
+                }
             )
         )
 
@@ -450,7 +459,9 @@ class RightMenuAdapter(
             val labelRes: Int,
             val value: () -> Boolean,
             val tag: RightMenuTag,
-            val longClick: Boolean = false
+            val longClick: Boolean = false,
+            /** 值为真但当前环境不具备生效条件时的提示后缀（如无障碍服务未授权） */
+            val unavailableHint: String? = null
         ) : Row()
 
         data class ButtonRow(
@@ -627,7 +638,12 @@ class RightMenuAdapter(
 
     private fun bindSwitch(holder: Holder, row: Row.SwitchRow) {
         val binding = ItemMenuSwitchBinding.bind(holder.itemView)
-        binding.switchView.text = context.getString(row.labelRes)
+        val hint = row.unavailableHint
+        binding.switchView.text = if (hint.isNullOrEmpty()) {
+            context.getString(row.labelRes)
+        } else {
+            context.getString(row.labelRes) + hint
+        }
         binding.switchView.setOnCheckedChangeListener(null)
         binding.switchView.isChecked = row.value()
         binding.switchView.setOnCheckedChangeListener { _, checked ->

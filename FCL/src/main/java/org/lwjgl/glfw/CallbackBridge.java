@@ -185,14 +185,41 @@ public class CallbackBridge {
         SDLActivity.onNativeMouse(0, MotionEvent.ACTION_MOVE, x, y, true);
     }
 
+    /** GLFW_RELEASE，与 glfw3.h 一致 */
+    public static final int GLFW_RELEASE = 0;
+    /** GLFW_PRESS，与 glfw3.h 一致 */
+    public static final int GLFW_PRESS = 1;
+    /** GLFW_REPEAT：系统自动重复（长按）。游戏据此只维持按下状态，不会重新触发按键 */
+    public static final int GLFW_REPEAT = 2;
+
     public static void sendKeycode(int keycode, char keychar, int scancode, int modifiers, boolean isDown) {
+        sendKeycode(keycode, keychar, scancode, modifiers, isDown, false);
+    }
+
+    /**
+     * @param repeated 是否为系统自动重复（长按）产生的重复按下。
+     *                 <p>
+     *                 Android 在按住约 500ms 后会持续投递 repeatCount&gt;0 的 ACTION_DOWN，
+     *                 若每个都当作 GLFW_PRESS，一次物理按键会在游戏里触发多次（音效重复、
+     *                 菜单焦点连跳多步）。以 GLFW_REPEAT 下发即与桌面端 GLFW 行为一致：
+     *                 只维持按下状态，不重新触发。重复事件不再补发字符事件，
+     *                 否则文本框会一次按键打出多个字符。
+     */
+    public static void sendKeycode(int keycode, char keychar, int scancode, int modifiers,
+                                   boolean isDown, boolean repeated) {
         // TODO CHECK: This may cause input issue, not receive input!
         if (keycode != 0) {
             int code = LwjglKeycodeMap.convertKeycode(keycode);
             if (code <= 0) {
                 return;
             }
-            nativeSendKey(code, scancode, isDown ? 1 : 0, modifiers);
+            // 重复按下用 GLFW_REPEAT 下发；抬起永远发 GLFW_RELEASE
+            int action = !isDown ? GLFW_RELEASE : (repeated ? GLFW_REPEAT : GLFW_PRESS);
+            nativeSendKey(code, scancode, action, modifiers);
+            if (repeated) {
+                // 重复事件只同步按住状态，不再补发字符/SDL 按键，避免文本重复与二次触发
+                return;
+            }
             // 补齐桌面键盘 keydown 与字符事件成对到达的语义：Cleanroom 的 lwjglx 系 LWJGL2 兼容层
             // 参考 Display.keyCallback（https://github.com/CleanroomMC/LWJGLXX/blob/master/src/main/java/org/lwjglx/opengl/Display.java）
             // 将字母/数字/标点的 keydown 暂存，等 charMods 事件合并后才投给游戏；

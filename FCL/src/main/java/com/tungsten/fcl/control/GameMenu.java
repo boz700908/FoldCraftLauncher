@@ -144,6 +144,21 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
 
     private MultiplayerDialog multiplayerDialog;
 
+    /** 一次性提醒「无障碍按键服务未授权」的持久化标记键名 */
+    private static final String PREF_ACCESSIBILITY_KEY_REMINDED = "accessibility_key_reminded";
+
+    /**
+     * 是否已经就「无障碍按键服务未授权」提醒过用户。
+     * <p>
+     * 授权状态随时可能被用户改掉，所以判断不能只发生在拨动开关的那一刻，要在真正用到
+     * 实体键盘通道时实时确认。但提醒只做一次并且写入磁盘：有相当一部分用户是刻意不开
+     * 无障碍服务、就想用不依赖授权的回退通道，对这类用户反复弹提示就是骚扰。
+     * 只有确认已授权（说明用户接受了这条通道）时才重置标记，之后若又被撤销，还能再提醒一次
+     */
+    private boolean accessibilityKeyReminded;
+    /** 一次性标记是否已从磁盘读过：避免每次按键都查一遍 SharedPreferences */
+    private boolean accessibilityKeyRemindedLoaded;
+
     private MenuView menuView;
 
     private TouchController touchController;
@@ -837,6 +852,18 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
             // 并把下一个按下的键误绑定为快捷键
             drawerLayout.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
                 @Override
+                public void onDrawerOpened(@NonNull View drawerView) {
+                    if (isRightMenuDrawer(drawerView)) {
+                        // 打开菜单是用到这项能力的时刻：按当前真实授权状态刷新开关行，
+                        // 并在未授权时提示用户
+                        if (rightMenuAdapter != null) {
+                            rightMenuAdapter.rebuild();
+                        }
+                        checkAccessibilityKeyService();
+                    }
+                }
+
+                @Override
                 public void onDrawerClosed(@NonNull View drawerView) {
                     if (isRightMenuDrawer(drawerView)) {
                         cancelKeyBindListen();
@@ -894,6 +921,10 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
             fclInput.setGameForeground(true);
         }
         fclInput.startCaptureWatchdog();
+        // 回到前台的这一刻就确认一次：用户很可能刚在系统设置里授权或撤销授权，
+        // 先丢掉短时缓存确保读到的是当下真实状态
+        FCLKeyAccessibilityService.invalidateStateCache();
+        checkAccessibilityKeyService();
         if (menuSetting != null && menuSetting.isEnableGyroscope() && gyroscope != null) {
             gyroscope.enableSensor();
         }
@@ -1215,6 +1246,9 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
                 // 打开时若用户还没在系统设置里授权，给出可直达设置的提示，
                 // 否则开关看起来打开了、实际按键仍走旧链路，会让人以为功能没生效
                 if (checked && !FCLKeyAccessibilityService.isEnabled(activity)) {
+                    // 这一刻是用户主动打开开关，给出可直达设置的提示；
+                    // 同时记入一次性提醒，之后不再用 Toast 重复打扰
+                    markAccessibilityKeyReminded();
                     FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(activity);
                     builder.setAlertLevel(FCLAlertDialog.AlertLevel.INFO);
                     builder.setTitle(activity.getString(R.string.menu_settings_accessibility_keyboard));
@@ -1269,6 +1303,77 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
                 SdlSettings.setSdlAutoShowIme(checked);
                 break;
         }
+    }
+
+    /**
+     * 在真正用到实体键盘通道时确认无障碍服务是否已授权，未授权则提醒用户。
+     * <p>
+     * 调用点：游戏回到前台、打开右菜单、以及每个物理按键按下时。授权状态随时可能被
+     * 用户改掉，只在开关切换的瞬间判断一次会让界面与真实状态长期不一致，也会让人
+     * 以为「开关开着却依然有延迟」却不明白原因。
+     * <p>
+     * 提醒只做一次：愿意授权的用户会被提示一次并去设置；而刻意不开无障碍服务、只想用
+     * 不依赖授权的回退通道的用户，不该被反复打扰
+     */
+    public void checkAccessibilityKeyService() {
+        if (menuSetting == null || activity == null || activity.isFinishing()) {
+            return;
+        }
+        boolean enabled = FCLKeyAccessibilityService.isEnabled(activity);
+        if (enabled) {
+            // 用户确实接受了这条通道：清掉一次性标记，将来若被撤销还能再提醒一次
+            clearAccessibilityKeyReminded();
+            return;
+        }
+        // 开关关掉时压根不走这条通道，不提醒
+        if (!menuSetting.isAccessibilityKeyboard()) {
+            return;
+        }
+        if (isAccessibilityKeyReminded()) {
+            return;
+        }
+        markAccessibilityKeyReminded();
+        activity.runOnUiThread(() -> {
+            if (activity == null || activity.isFinishing()) {
+                return;
+            }
+            // 按键路径可能来自无障碍服务线程，统一切主线程弹提示
+            Toast.makeText(activity,
+                    R.string.menu_settings_accessibility_keyboard_tip, Toast.LENGTH_LONG).show();
+        });
+    }
+
+    /** 读取一次性提醒标记（只在首次读取磁盘，之后走内存） */
+    private boolean isAccessibilityKeyReminded() {
+        if (!accessibilityKeyRemindedLoaded) {
+            accessibilityKeyRemindedLoaded = true;
+            accessibilityKeyReminded = activity
+                    .getSharedPreferences("launcher", MODE_PRIVATE)
+                    .getBoolean(PREF_ACCESSIBILITY_KEY_REMINDED, false);
+        }
+        return accessibilityKeyReminded;
+    }
+
+    /** 记录已提醒：此后不再主动提示，直到用户真正授权过一次 */
+    private void markAccessibilityKeyReminded() {
+        if (accessibilityKeyReminded) {
+            return;
+        }
+        accessibilityKeyReminded = true;
+        accessibilityKeyRemindedLoaded = true;
+        activity.getSharedPreferences("launcher", MODE_PRIVATE)
+                .edit().putBoolean(PREF_ACCESSIBILITY_KEY_REMINDED, true).apply();
+    }
+
+    private void clearAccessibilityKeyReminded() {
+        if (!accessibilityKeyReminded) {
+            accessibilityKeyRemindedLoaded = true;
+            return;
+        }
+        accessibilityKeyReminded = false;
+        accessibilityKeyRemindedLoaded = true;
+        activity.getSharedPreferences("launcher", MODE_PRIVATE)
+                .edit().putBoolean(PREF_ACCESSIBILITY_KEY_REMINDED, false).apply();
     }
 
     private void handleRightSwitchLongClick(RightMenuTag tag) {

@@ -176,10 +176,15 @@ public class FCLInput implements View.OnCapturedPointerListener {
     /**
      * @param repeated 是否为系统自动重复（长按）产生的重复事件
      *                 <p>
-     *                 修饰键状态只在真实按下/抬起时更新：长按产生的 ACTION_DOWN 会带重复计数，
-     *                 若每次都调 setModifiers，Caps/Num Lock 的锁存会被反复翻转，Shift 等也会被
-     *                 重复置位后又被抬起清掉。非修饰键的重复事件本身仍要正常下发，
-     *                 否则游戏里的长按（连续行走、连续退格）就断了
+     *                 系统重复事件必须以 GLFW 的 {@code GLFW_REPEAT} 动作下发，不能当成新的按下：
+     *                 Android 在按住约 500ms 后开始按 ~50ms 的间隔不断投递 repeatCount&gt;0 的
+     *                 ACTION_DOWN，若每个都当作 GLFW_PRESS，一次物理按键会在游戏里触发多次
+     *                 （按 600ms 约三次、每三次跨帧，表现为多次音效/焦点连跳多步）。
+     *                 桌面端 GLFW 对自动重复发的就是 GLFW_REPEAT，游戏据此只维持按下状态而
+     *                 不重新触发，这是桌面端不存在该现象的原因。
+     *                 <p>
+     *                 修饰键状态只在真实按下/抬起时更新：重复事件若也调 setModifiers，
+     *                 Caps/Num Lock 的锁存会被反复翻转，Shift 等也会被重复置位后又被抬起清掉
      */
     public void sendKeyEvent(int keycode, int keyChar, boolean press, boolean repeated) {
         if (menu.getBridge() != null) {
@@ -195,7 +200,7 @@ public class FCLInput implements View.OnCapturedPointerListener {
                         CallbackBridge.setModifiers(code, press);
                     }
                 }
-                menu.getBridge().pushEventKey(keycode, keyChar, press);
+                menu.getBridge().pushEventKey(keycode, keyChar, press, repeated);
             }
         }
     }
@@ -627,6 +632,22 @@ public class FCLInput implements View.OnCapturedPointerListener {
             return gamepad.handleKeyEvent(event);
         }
         //keyboard
+        // 实体键盘总开关：关掉后必须把整条通道一起关断——既不再经无障碍服务接管，
+        // 也不再从 Activity 的兜底路径把按键送进游戏。原实现只关掉了无障碍通道，
+        // 兜底链路照旧生效，开关形同虚设
+        if (isPhysicalKeyboardEvent(event) && !isTextInputActive()) {
+            if (!menu.getMenuSetting().isAccessibilityKeyboard()) {
+                // BACK 例外：它是唤出游戏内暂停菜单、进而唤出启动器菜单的退路，
+                // 关掉键盘控制后仍然要能用键盘退出游戏，否则只能靠触摸
+                return event.getKeyCode() != KeyEvent.KEYCODE_BACK;
+            }
+            // 开关打开时在真正用到按键的这一刻确认系统里确实授权了无障碍服务：
+            // 用户可能随时在系统设置里撤销授权，只在拨动开关的瞬间判断一次会让界面
+            // 与真实状态长期不符。服务活着时是快路径，不会每次按键都读系统设置
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                menu.checkAccessibilityKeyService();
+            }
+        }
         if (fclKeycode == FCLKeycodes.KEY_UNKNOWN)
             return (event.getFlags() & KeyEvent.FLAG_FALLBACK) == KeyEvent.FLAG_FALLBACK;
         boolean press = event.getAction() == KeyEvent.ACTION_DOWN;
@@ -652,6 +673,44 @@ public class FCLInput implements View.OnCapturedPointerListener {
         int keyChar = press && menu.getCursorMode() == FCLBridge.CursorEnabled ? event.getUnicodeChar() : 0;
         sendKeyEvent(fclKeycode, keyChar, press, event.getRepeatCount() > 0);
         return true;
+    }
+
+    /**
+     * 游戏内文本输入是否处于启用态（软键盘输入框或 SDL 自己的输入框）。
+     * <p>
+     * 输入框开着时按键的归属是输入法与文本框，物理按键必须照常送进去打字，
+     * 不能被「实体键盘控制」的总开关或全局接管一起吞掉
+     */
+    private boolean isTextInputActive() {
+        if (menu.getTouchCharInput() != null && menu.getTouchCharInput().isEnabled()) {
+            return true;
+        }
+        return SdlBridge.getSdlEnabled() && SdlBridge.isSdlRenderActive()
+                && SDLActivity.isSDLEditKeyboardShown();
+    }
+
+    /**
+     * 是否为物理键盘来源的按键。
+     * <p>
+     * 软键盘、手柄、由鼠标按键转换而来的事件都不算——它们各自有独立通道，
+     * 不该被「实体键盘控制」这个总开关牵连
+     */
+    private boolean isPhysicalKeyboardEvent(KeyEvent event) {
+        if ((event.getFlags() & KeyEvent.FLAG_SOFT_KEYBOARD) == KeyEvent.FLAG_SOFT_KEYBOARD) {
+            return false;
+        }
+        if (Gamepad.isGamepadEvent(event)) {
+            return false;
+        }
+        InputDevice device = event.getDevice();
+        if (device == null) {
+            // 拿不到来源设备的都是合成事件（输入法 InputConnection、文本框内部派发等）。
+            // 这些绝不能算物理键盘，否则关掉开关后连打字都会被吞掉
+            return false;
+        }
+        int sources = device.getSources();
+        return (sources & InputDevice.SOURCE_KEYBOARD) != 0
+                || (sources & InputDevice.SOURCE_DPAD) != 0;
     }
 
     /** 锁存型切换键：重复按下不应改变锁定状态 */

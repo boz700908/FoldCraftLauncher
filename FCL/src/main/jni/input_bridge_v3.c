@@ -601,10 +601,20 @@ void noncritical_send_cursor_pos(__attribute__((unused)) JNIEnv *env,
        __typeof__ (b) _b = (b); \
      _a > _b ? _a : _b; })
 
+/* GLFW 动作值，与 glfw3.h 一致 */
+#define GLFW_RELEASE_ACTION 0
+#define GLFW_PRESS_ACTION   1
+#define GLFW_REPEAT_ACTION  2
+
 void critical_send_key(jint key, jint scancode, jint action, jint mods) {
     if (pojav_environ->GLFW_invoke_Key && pojav_environ->isInputReady) {
         if (key >= 31 && key <= 348 && pojav_environ->keyDownBuffer != NULL) {
-            pojav_environ->keyDownBuffer[key - 31] = (jbyte) action;
+            // 按住状态缓冲只记录「是否按下」两态：glfwGetKey() 直接把这个字节当返回值，
+            // 而游戏侧用 == GLFW_PRESS 判断是否按住。GLFW_REPEAT(2) 若原样写入，
+            // glfwGetKey() 会返回 2，游戏会认为该键并没有处于按下状态（长按失效、
+            // 修饰键在重复期间被判定为松开），因此重复一律记为按下
+            pojav_environ->keyDownBuffer[key - 31] =
+                    (jbyte) (action == GLFW_RELEASE_ACTION ? GLFW_RELEASE_ACTION : GLFW_PRESS_ACTION);
         }
         if (pojav_environ->isUseStackQueueCall) {
             sendData(EVENT_TYPE_KEY, key, scancode, action, mods);

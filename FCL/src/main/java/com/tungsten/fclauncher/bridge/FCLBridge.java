@@ -228,7 +228,16 @@ public class FCLBridge {
     }
 
     public void pushEventKey(int keyCode, int keyChar, boolean press) {
-        CallbackBridge.sendKeycode(keyCode, (char) keyChar, 0, CallbackBridge.getCurrentMods(), press);
+        pushEventKey(keyCode, keyChar, press, false);
+    }
+
+    /**
+     * @param repeated 是否为系统自动重复（长按）产生的重复按下，true 时以 GLFW_REPEAT 下发，
+     *                 只维持按住状态而不重新触发按键，避免一次物理按键在游戏内触发多次
+     */
+    public void pushEventKey(int keyCode, int keyChar, boolean press, boolean repeated) {
+        CallbackBridge.sendKeycode(keyCode, (char) keyChar, 0, CallbackBridge.getCurrentMods(),
+                press, repeated);
     }
 
     public void pushEventChar(char keyChar) {

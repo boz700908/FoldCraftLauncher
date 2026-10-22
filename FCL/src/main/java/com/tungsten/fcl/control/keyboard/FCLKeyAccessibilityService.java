@@ -51,6 +51,26 @@ public class FCLKeyAccessibilityService extends AccessibilityService {
     private static WeakReference<FCLKeyAccessibilityService> sInstance;
 
     /**
+     * 服务可用状态的短时缓存。
+     * <p>
+     * 状态查询要读 {@link Settings.Secure} 并遍历无障碍服务列表，不适合每次按键都做；
+     * 但也不能像原来那样只在开关切换时判断一次——用户可能随时去系统设置里授权或撤销授权，
+     * 只在切换开关时判断会让界面上的状态与真实状态长期不一致。这里用短 TTL 兜住高频查询，
+     * 同时由系统状态变化监听器在授权变化时立刻让缓存失效
+     */
+    private static final long STATE_CACHE_TTL_MS = 1000L;
+    private static volatile Boolean sCachedEnabled;
+    private static volatile long sCachedAt;
+
+    /** 状态变化监听器集合，界面据此刷新开关的可用态提示 */
+    private static final java.util.Set<Runnable> sStateListeners =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    private static AccessibilityManager sManager;
+    private static Object sStateChangeListener;
+    private static Object sSettingsObserver;
+
+    /**
      * 取当前已连接的服务实例，未连接时返回 null。
      */
     public static FCLKeyAccessibilityService getInstance() {
@@ -73,6 +93,7 @@ public class FCLKeyAccessibilityService extends AccessibilityService {
         }
         info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
         setServiceInfo(info);
+        notifyStateChanged();
     }
 
     @Override
@@ -108,17 +129,46 @@ public class FCLKeyAccessibilityService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         sInstance = null;
+        notifyStateChanged();
         return super.onUnbind(intent);
     }
 
     /**
-     * 判断本服务是否已在系统设置里被用户启用。
+     * 判断本服务是否已在系统设置里被用户启用，带短时缓存。
      * <p>
-     * 这里同时用两种方式判断：{@code Settings.Secure} 里的字符串便于在开关切换时立刻判断，
-     * {@link AccessibilityManager} 的列表则能反映「已勾选但服务未跑起来」的真实状态。
-     * 任一为真即视为可用。
+     * 缓存在两种情况下立即失效：系统广播无障碍状态变化、{@code Settings.Secure} 中的
+     * 已启用服务列表发生变更。因此用户在系统设置里授权或撤销授权后，界面与门控都会立刻跟上，
+     * 不需要重新进入游戏或重新拨一次开关
      */
     public static boolean isEnabled(Context context) {
+        if (context == null) {
+            return false;
+        }
+        // 服务实例连着就是最直接的证据，不必走缓存
+        if (getInstance() != null) {
+            return true;
+        }
+        long now = System.currentTimeMillis();
+        Boolean cached = sCachedEnabled;
+        if (cached != null && now - sCachedAt < STATE_CACHE_TTL_MS) {
+            return cached;
+        }
+        boolean result = isEnabledFresh(context);
+        sCachedEnabled = result;
+        sCachedAt = now;
+        return result;
+    }
+
+    /** 丢弃状态缓存，下次查询重新读取系统状态 */
+    public static void invalidateStateCache() {
+        sCachedEnabled = null;
+        sCachedAt = 0L;
+    }
+
+    /**
+     * 直接向系统查询服务是否启用，不使用缓存。
+     */
+    public static boolean isEnabledFresh(Context context) {
         if (context == null) {
             return false;
         }
@@ -166,6 +216,81 @@ public class FCLKeyAccessibilityService extends AccessibilityService {
             return false;
         }
         return false;
+    }
+
+    /**
+     * 注册无障碍状态变化监听：用户在系统设置里授权/撤销授权、或服务被系统回收时触发。
+     * <p>
+     * 监听器用弱引用保存，界面销毁后不会因为忘记反注册而泄漏；回调统一切到主线程执行
+     */
+    public static void addStateChangeListener(Context context, final Runnable listener) {
+        if (context == null || listener == null) {
+            return;
+        }
+        sStateListeners.add(listener);
+        ensureStateWatchers(context.getApplicationContext());
+    }
+
+    public static void removeStateChangeListener(Runnable listener) {
+        if (listener != null) {
+            sStateListeners.remove(listener);
+        }
+    }
+
+    private static void notifyStateChanged() {
+        invalidateStateCache();
+        for (Runnable listener : new java.util.ArrayList<>(sStateListeners)) {
+            if (listener == null) {
+                continue;
+            }
+            try {
+                listener.run();
+            } catch (Throwable ignored) {
+                // 单个监听器异常不能影响其它监听器
+            }
+        }
+    }
+
+    /**
+     * 装一次系统级监听。两条通路都装：
+     * <ul>
+     *   <li>{@link AccessibilityManager} 的状态变化回调，覆盖「无障碍总开关」与被接管服务集合的变化</li>
+     *   <li>{@code Settings.Secure} 的 ContentObserver，覆盖部分 ROM 上回调不触发的场景</li>
+     * </ul>
+     */
+    private static synchronized void ensureStateWatchers(final Context appContext) {
+        if (sStateChangeListener == null) {
+            try {
+                AccessibilityManager manager =
+                        (AccessibilityManager) appContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
+                if (manager != null) {
+                    sManager = manager;
+                    AccessibilityManager.AccessibilityStateChangeListener l =
+                            enabled -> notifyStateChanged();
+                    sStateChangeListener = l;
+                    manager.addAccessibilityStateChangeListener(l);
+                }
+            } catch (Throwable ignored) {
+                sStateChangeListener = null;
+            }
+        }
+        if (sSettingsObserver == null) {
+            try {
+                android.database.ContentObserver observer = new android.database.ContentObserver(
+                        new android.os.Handler(android.os.Looper.getMainLooper())) {
+                    @Override
+                    public void onChange(boolean selfChange) {
+                        notifyStateChanged();
+                    }
+                };
+                sSettingsObserver = observer;
+                appContext.getContentResolver().registerContentObserver(
+                        Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+                        false, observer);
+            } catch (Throwable ignored) {
+                sSettingsObserver = null;
+            }
+        }
     }
 
     /**
