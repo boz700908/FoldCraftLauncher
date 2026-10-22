@@ -665,6 +665,11 @@
     <string name="menu_settings_mouse_offset_x">Mouse Offset X</string>
     <string name="menu_settings_mouse_offset_y">Mouse Offset Y</string>
     <string name="menu_settings_physical_mouse_mode">Physical Mouse</string>
+    <string name="menu_settings_accessibility_keyboard">Physical Keyboard</string>
+    <string name="accessibility_key_service_label">Physical Keyboard Input</string>
+    <string name="accessibility_key_service_description">Forwards physical keyboard key events directly to the running game, so that shortcuts, Enter, Home/End, the numeric keypad and modifier keys keep working regardless of which window has focus. Only key events are read; screen content is never accessed.</string>
+    <string name="menu_settings_open_accessibility_settings">Open accessibility settings</string>
+    <string name="menu_settings_accessibility_keyboard_tip">Physical keyboard support requires the accessibility service to be enabled in system settings. Without it, keys are only delivered when the game view has focus.</string>
     <string name="menu_settings_slide_acceleration">Slide Acceleration</string>
     <string name="menu_settings_distance_acceleration">Distance Acceleration</string>
     <string name="menu_settings_simultaneous_view_control">Simultaneous View Control</string>

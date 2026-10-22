@@ -115,6 +115,9 @@ public final class FCLKeycodes {
 
     public static final int  KEY_LEFTMATA        = 125;
     public static final int  KEY_RIGHTMETA       = 126;
+    // 以下两项补 Linux input 事件的既有定义（原表缺项，导致 Android 的 MENU/COMPOSE 键位无对应值）
+    public static final int  KEY_COMPOSE         = 127;
+    public static final int  KEY_MENU            = 139;
 
     public static final int  KEY_F13             = 183;
     public static final int  KEY_F14             = 184;

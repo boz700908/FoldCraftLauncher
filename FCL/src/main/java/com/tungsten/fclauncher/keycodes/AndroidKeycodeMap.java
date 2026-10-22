@@ -2,25 +2,25 @@ package com.tungsten.fclauncher.keycodes;
 
 import android.view.KeyEvent;
 
-import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 public class AndroidKeycodeMap {
 
-    private static final int[] ANDROID_KEYCODES = new int[99];
-    private static final int[] FCL_KEYCODES = new int[99];
-
-    private static int count = 0;
+    /**
+     * 原实现用两条固定长度 99 的并行数组 + binarySearch，条目数一超就静默截断，
+     * 且依赖数组升序（插入顺序稍有偏差就整体失效）。改用 HashMap 后既无上限也无顺序要求。
+     */
+    private static final Map<Integer, Integer> KEY_MAP = new HashMap<>();
 
     private static void add(int androidKeycode, int fclKeycode) {
-        ANDROID_KEYCODES[count] = androidKeycode;
-        FCL_KEYCODES[count] = fclKeycode;
-        count++;
+        KEY_MAP.put(androidKeycode, fclKeycode);
     }
 
     public static int convertKeycode(int androidKeycode) {
-        int index = Arrays.binarySearch(ANDROID_KEYCODES, androidKeycode);
-        if (index >= 0)
-            return FCL_KEYCODES[index];
+        Integer fclKeycode = KEY_MAP.get(androidKeycode);
+        if (fclKeycode != null)
+            return fclKeycode;
         return FCLKeycodes.KEY_UNKNOWN;
     }
 
@@ -39,6 +39,8 @@ public class AndroidKeycodeMap {
         add(KeyEvent.KEYCODE_8,                              FCLKeycodes.KEY_8);
         add(KeyEvent.KEYCODE_9,                              FCLKeycodes.KEY_9);
 
+        // 手机拨号盘的 # 与 @ 复用数字键：真机布局里这两个键位没有独立字符，
+        // 折叠屏/外接键盘上的 3 与 2 才是玩家的直觉预期，故保持映射到数字键
         add(KeyEvent.KEYCODE_POUND,                          FCLKeycodes.KEY_3);
 
         add(KeyEvent.KEYCODE_DPAD_UP,                        FCLKeycodes.KEY_UP);
@@ -95,6 +97,7 @@ public class AndroidKeycodeMap {
         add(KeyEvent.KEYCODE_SEMICOLON,                      FCLKeycodes.KEY_SEMICOLON);
         add(KeyEvent.KEYCODE_APOSTROPHE,                     FCLKeycodes.KEY_APOSTROPHE);
         add(KeyEvent.KEYCODE_SLASH,                          FCLKeycodes.KEY_SLASH);
+        // 同上，@ 映射到 2 以兼容手机布局
         add(KeyEvent.KEYCODE_AT,                             FCLKeycodes.KEY_2);
 
         add(KeyEvent.KEYCODE_PAGE_UP,                        FCLKeycodes.KEY_PAGEUP);
@@ -106,9 +109,17 @@ public class AndroidKeycodeMap {
         add(KeyEvent.KEYCODE_CTRL_RIGHT,                     FCLKeycodes.KEY_RIGHTCTRL);
 
         add(KeyEvent.KEYCODE_CAPS_LOCK,                      FCLKeycodes.KEY_CAPSLOCK);
+        add(KeyEvent.KEYCODE_SCROLL_LOCK,                    FCLKeycodes.KEY_SCROLLLOCK);
         add(KeyEvent.KEYCODE_BREAK,                          FCLKeycodes.KEY_PAUSE);
+        add(KeyEvent.KEYCODE_MOVE_HOME,                      FCLKeycodes.KEY_HOME);
         add(KeyEvent.KEYCODE_MOVE_END,                       FCLKeycodes.KEY_END);
         add(KeyEvent.KEYCODE_INSERT,                         FCLKeycodes.KEY_INSERT);
+        add(KeyEvent.KEYCODE_FORWARD_DEL,                    FCLKeycodes.KEY_DELETE);
+        add(KeyEvent.KEYCODE_SYSRQ,                          FCLKeycodes.KEY_SYSRQ);
+        add(KeyEvent.KEYCODE_MENU,                           FCLKeycodes.KEY_MENU);
+        // Win/Super 键
+        add(KeyEvent.KEYCODE_META_LEFT,                      FCLKeycodes.KEY_LEFTMATA);
+        add(KeyEvent.KEYCODE_META_RIGHT,                     FCLKeycodes.KEY_RIGHTMETA);
 
         add(KeyEvent.KEYCODE_F1,                             FCLKeycodes.KEY_F1);
         add(KeyEvent.KEYCODE_F2,                             FCLKeycodes.KEY_F2);
@@ -138,6 +149,10 @@ public class AndroidKeycodeMap {
         add(KeyEvent.KEYCODE_NUMPAD_COMMA,                   FCLKeycodes.KEY_KPCOMMA);
         add(KeyEvent.KEYCODE_NUMPAD_ENTER,                   FCLKeycodes.KEY_KPENTER);
         add(KeyEvent.KEYCODE_NUMPAD_EQUALS,                  FCLKeycodes.KEY_KPEQUAL);
+        add(KeyEvent.KEYCODE_NUMPAD_DIVIDE,                  FCLKeycodes.KEY_KPSLASH);
+        add(KeyEvent.KEYCODE_NUMPAD_MULTIPLY,                FCLKeycodes.KEY_KPASTERISK);
+        add(KeyEvent.KEYCODE_NUMPAD_SUBTRACT,                FCLKeycodes.KEY_KPMINUS);
+        add(KeyEvent.KEYCODE_NUMPAD_ADD,                     FCLKeycodes.KEY_KPPLUS);
     }
 
 }

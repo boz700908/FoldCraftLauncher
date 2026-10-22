@@ -591,6 +591,11 @@
     <string name="menu_settings_mouse_offset_x">鼠标偏移X</string>
     <string name="menu_settings_mouse_offset_y">鼠标偏移Y</string>
     <string name="menu_settings_physical_mouse_mode">实体鼠标控制</string>
+    <string name="menu_settings_accessibility_keyboard">实体键盘控制</string>
+    <string name="accessibility_key_service_label">实体键盘输入</string>
+    <string name="accessibility_key_service_description">将实体键盘的按键事件直接转发给正在运行的游戏，使快捷键、回车、Home/End、小键盘与各修饰键在任何窗口焦点下都能生效。本服务只读取按键事件，不访问屏幕内容。</string>
+    <string name="menu_settings_open_accessibility_settings">打开无障碍设置</string>
+    <string name="menu_settings_accessibility_keyboard_tip">实体键盘支持需要在系统设置中启用本应用的无障碍服务。未启用时，按键仅在游戏视图获得焦点时才能送达。</string>
     <string name="menu_settings_slide_acceleration">滑动加速</string>
     <string name="menu_settings_distance_acceleration">距离加速</string>
     <string name="menu_settings_simultaneous_view_control">同时控制视角</string>

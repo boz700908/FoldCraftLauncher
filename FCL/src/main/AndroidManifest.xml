@@ -165,6 +165,21 @@
             </intent-filter>
         </service>
 
+        <!-- 实体键盘全局接管：以无障碍服务过滤按键，保证外接键盘在任何焦点状态下都能直达游戏 -->
+        <service
+            android:name=".control.keyboard.FCLKeyAccessibilityService"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/accessibility_key_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/fcl_key_accessibility" />
+        </service>
+
         <meta-data
             android:name="android.game_mode_config"
             android:resource="@xml/game_mode_config" />

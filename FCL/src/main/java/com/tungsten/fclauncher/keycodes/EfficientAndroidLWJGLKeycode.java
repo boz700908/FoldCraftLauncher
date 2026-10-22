@@ -35,10 +35,13 @@ public class EfficientAndroidLWJGLKeycode {
     //This old version of this class was using an ArrayMap, a generic Key -> Value data structure.
     //The key being the android keycode from a KeyEvent
     //The value its LWJGL equivalent.
-    private static final int KEYCODE_COUNT = 112;
-    private static final int[] sAndroidKeycodes = new int[KEYCODE_COUNT];
-    private static final short[] sLwjglKeycodes = new short[KEYCODE_COUNT];
-    private static int mTmpCount = 0;
+    // 原实现用固定长度 112 的数组承载映射表，add() 没有越界检查，条目一旦超过 112
+    // 就会在类初始化时抛 ArrayIndexOutOfBoundsException。现改为先收集再定长拷贝，
+    // 长度恒等于条目数，binarySearch 的语义与原先完全一致。
+    private static final int[] sAndroidKeycodes;
+    private static final short[] sLwjglKeycodes;
+
+    private static final java.util.ArrayList<int[]> sEntries = new java.util.ArrayList<>();
 
     static {
         /*  BINARY SEARCH IS PERFORMED ON THE androidKeycodes ARRAY !
@@ -183,6 +186,14 @@ public class EfficientAndroidLWJGLKeycode {
         add(KeyEvent.KEYCODE_NUMPAD_ENTER, LwjglGlfwKeycode.KEY_KP_ENTER);
         add(KeyEvent.KEYCODE_NUMPAD_EQUALS, LwjglGlfwKeycode.KEY_KP_EQUAL); //161
 
+        sAndroidKeycodes = new int[sEntries.size()];
+        sLwjglKeycodes = new short[sEntries.size()];
+        for (int i = 0; i < sEntries.size(); i++) {
+            int[] entry = sEntries.get(i);
+            sAndroidKeycodes[i] = entry[0];
+            sLwjglKeycodes[i] = (short) entry[1];
+        }
+        sEntries.clear();
     }
 
     public static boolean containsIndex(int index){
@@ -229,10 +240,7 @@ public class EfficientAndroidLWJGLKeycode {
     }
 
     private static void add(int androidKeycode, short LWJGLKeycode){
-        sAndroidKeycodes[mTmpCount] = androidKeycode;
-        sLwjglKeycodes[mTmpCount] = LWJGLKeycode;
-
-        mTmpCount ++;
+        sEntries.add(new int[]{androidKeycode, LWJGLKeycode});
     }
 
     private static final KeyCharacterMap mKcm = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD);

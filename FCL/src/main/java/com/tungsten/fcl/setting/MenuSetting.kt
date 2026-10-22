@@ -291,6 +291,17 @@ class MenuSetting {
             changed()
         }
 
+    /**
+     * 实体键盘是否经无障碍服务全局接管。
+     * 默认开启：开箱即用；服务未授权时自动退回 Activity 的按键派发链路，不会有副作用。
+     */
+    var isAccessibilityKeyboard: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            changed()
+        }
+
     var gamepadDeadzone: Double = 1.0
         set(value) {
             if (field == value) return
@@ -407,6 +418,7 @@ class MenuSetting {
                 addProperty("mouseOffsetX", src.mouseOffsetX)
                 addProperty("mouseOffsetY", src.mouseOffsetY)
                 addProperty("physicalMouseMode", src.isPhysicalMouseMode)
+                addProperty("accessibilityKeyboard", src.isAccessibilityKeyboard)
                 addProperty("itemBarWidth", src.itemBarWidth)
                 addProperty("itemBarHeight", src.itemBarHeight)
                 addProperty("windowScale", src.windowScale)
@@ -470,6 +482,7 @@ class MenuSetting {
                 ms.mouseOffsetX = json["mouseOffsetX"]?.asInt ?: 0
                 ms.mouseOffsetY = json["mouseOffsetY"]?.asInt ?: 0
                 ms.isPhysicalMouseMode = json["physicalMouseMode"]?.asBoolean ?: false
+                ms.isAccessibilityKeyboard = json["accessibilityKeyboard"]?.asBoolean ?: true
                 ms.itemBarWidth = json["itemBarWidth"]?.asInt ?: 0
                 ms.itemBarHeight = json["itemBarHeight"]?.asInt ?: 0
                 ms.windowScale = json["windowScale"]?.asDouble ?: 1.0

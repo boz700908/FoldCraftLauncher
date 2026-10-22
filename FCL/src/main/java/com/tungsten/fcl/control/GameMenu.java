@@ -52,6 +52,7 @@ import com.tungsten.fcl.control.data.ControlViewGroup;
 import com.tungsten.fcl.control.data.CustomControl;
 import com.tungsten.fcl.control.data.DirectionStyles;
 import com.tungsten.fcl.control.data.QuickInputTexts;
+import com.tungsten.fcl.control.keyboard.FCLKeyAccessibilityService;
 import com.tungsten.fcl.control.keyboard.LwjglCharSender;
 import com.tungsten.fcl.control.keyboard.TouchCharInput;
 import com.tungsten.fcl.control.view.GameItemBar;
@@ -877,6 +878,9 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
             fclInput.sendKeyEvent(FCLKeycodes.KEY_ESC, true);
             fclInput.sendKeyEvent(FCLKeycodes.KEY_ESC, false);
         }
+        if (fclInput != null) {
+            fclInput.setGameForeground(false);
+        }
         fclInput.stopCaptureWatchdog();
         fclInput.resetExternalMouseState();
         cancelKeyBindListen();
@@ -885,6 +889,10 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
 
     @Override
     public void onResume() {
+        // 无障碍按键服务是全应用生效的，靠这个标记把接管范围限制在游戏界面内
+        if (fclInput != null) {
+            fclInput.setGameForeground(true);
+        }
         fclInput.startCaptureWatchdog();
         if (menuSetting != null && menuSetting.isEnableGyroscope() && gyroscope != null) {
             gyroscope.enableSensor();
@@ -1202,6 +1210,20 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
                     getInput().ensurePointerCapture();
                 }
                 break;
+            case ACCESSIBILITY_KEYBOARD:
+                menuSetting.setAccessibilityKeyboard(checked);
+                // 打开时若用户还没在系统设置里授权，给出可直达设置的提示，
+                // 否则开关看起来打开了、实际按键仍走旧链路，会让人以为功能没生效
+                if (checked && !FCLKeyAccessibilityService.isEnabled(activity)) {
+                    FCLAlertDialog.Builder builder = new FCLAlertDialog.Builder(activity);
+                    builder.setAlertLevel(FCLAlertDialog.AlertLevel.INFO);
+                    builder.setTitle(activity.getString(R.string.menu_settings_accessibility_keyboard));
+                    builder.setMessage(activity.getString(R.string.menu_settings_accessibility_keyboard_tip));
+                    builder.setPositiveButton(activity.getString(R.string.menu_settings_open_accessibility_settings),
+                            () -> FCLKeyAccessibilityService.openAccessibilitySettings(activity));
+                    builder.create().show();
+                }
+                break;
             case SLIDE_ACCELERATION:
                 menuSetting.setSlideAcceleration(checked);
                 break;
@@ -1254,6 +1276,9 @@ public class GameMenu implements MenuCallback, FCLBridgeCallback {
             fpsText.resetPosition();
         } else if (tag == RightMenuTag.SHOW_MEMORY) {
             memoryText.resetPosition();
+        } else if (tag == RightMenuTag.ACCESSIBILITY_KEYBOARD) {
+            // 长按直接进系统设置，方便随时补授权/撤销授权
+            FCLKeyAccessibilityService.openAccessibilitySettings(activity);
         }
     }
 

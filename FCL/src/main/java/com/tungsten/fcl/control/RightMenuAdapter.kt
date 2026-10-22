@@ -48,6 +48,7 @@ enum class RightMenuTag {
     MOUSE_MODE, MOUSE_SENSITIVITY, MOUSE_CURSOR_SENSITIVITY, MOUSE_SIZE,
     MOUSE_OFFSET_X, MOUSE_OFFSET_Y, PHYSICAL_MOUSE,
     CAPTURE_POINTER_KEY, CAPTURE_POINTER_MODIFIER, IME_TOGGLE_KEY, IME_TOGGLE_MODIFIER,
+    ACCESSIBILITY_KEYBOARD,
 
     // 手柄
     GAMEPAD_CONTROL, GAMEPAD_RESET_MAPPER, GAMEPAD_BUTTON_BINDING, GAMEPAD_DEADZONE,
@@ -315,6 +316,13 @@ class RightMenuAdapter(
                 modifierOptions,
                 menuSetting.imeToggleModifier,
                 RightMenuTag.IME_TOGGLE_MODIFIER
+            ),
+            // 长按可跳到系统无障碍设置页，供用户给按键接管服务授权
+            Row.SwitchRow(
+                R.string.menu_settings_accessibility_keyboard,
+                { menuSetting.isAccessibilityKeyboard },
+                RightMenuTag.ACCESSIBILITY_KEYBOARD,
+                longClick = true
             )
         )
 

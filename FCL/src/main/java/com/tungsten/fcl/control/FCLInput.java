@@ -45,6 +45,28 @@ public class FCLInput implements View.OnCapturedPointerListener {
     private final int screenWidth;
     private final int screenHeight;
 
+    /**
+     * 当前存活的输入实例。
+     * <p>
+     * 无障碍服务是系统级单例，无法直接拿到 Activity 与 GameMenu，只能通过这里反查。
+     * 用弱引用，避免游戏退出后服务侧把整个 Activity 泄漏住
+     */
+    private static java.lang.ref.WeakReference<FCLInput> sInstance;
+
+    /**
+     * 游戏是否处于前台（由 {@link GameMenu#onResume()} / {@link GameMenu#onPause()} 维护）。
+     * 无障碍服务全应用生效，不加这个门控就会在启动器界面把按键也一并吞掉
+     */
+    private volatile boolean gameForeground;
+
+    public static FCLInput getInstance() {
+        return sInstance == null ? null : sInstance.get();
+    }
+
+    public void setGameForeground(boolean gameForeground) {
+        this.gameForeground = gameForeground;
+    }
+
     private Gamepad gamepad;
     private int currentDirection = -1;
     private long lastFrameTime;
@@ -116,6 +138,8 @@ public class FCLInput implements View.OnCapturedPointerListener {
 
         this.screenWidth = AndroidUtilKt.getScreenWidth();
         this.screenHeight = AndroidUtilKt.getScreenHeight();
+
+        sInstance = new java.lang.ref.WeakReference<>(this);
     }
 
     public void setPointer(float x, float y, String id) {
@@ -142,10 +166,22 @@ public class FCLInput implements View.OnCapturedPointerListener {
 
     @SuppressWarnings("ConstantConditions")
     public void sendKeyEvent(int keycode, boolean press) {
-        sendKeyEvent(keycode, 0, press);
+        sendKeyEvent(keycode, 0, press, false);
     }
 
     public void sendKeyEvent(int keycode, int keyChar, boolean press) {
+        sendKeyEvent(keycode, keyChar, press, false);
+    }
+
+    /**
+     * @param repeated 是否为系统自动重复（长按）产生的重复事件
+     *                 <p>
+     *                 修饰键状态只在真实按下/抬起时更新：长按产生的 ACTION_DOWN 会带重复计数，
+     *                 若每次都调 setModifiers，Caps/Num Lock 的锁存会被反复翻转，Shift 等也会被
+     *                 重复置位后又被抬起清掉。非修饰键的重复事件本身仍要正常下发，
+     *                 否则游戏里的长按（连续行走、连续退格）就断了
+     */
+    public void sendKeyEvent(int keycode, int keyChar, boolean press, boolean repeated) {
         if (menu.getBridge() != null) {
             if (MOUSE_MAP.containsKey(keycode) && MOUSE_MAP.get(keycode) != null) {
                 if (isDuplicateMouseButtonEvent(keycode, press)) {
@@ -153,9 +189,11 @@ public class FCLInput implements View.OnCapturedPointerListener {
                 }
                 menu.getBridge().pushEventMouseButton(MOUSE_MAP.get(keycode), press);
             } else {
-                int code = LwjglKeycodeMap.convertKeycode(keycode);
-                if (code >= 0) {
-                    CallbackBridge.setModifiers(code, press);
+                if (!repeated) {
+                    int code = LwjglKeycodeMap.convertKeycode(keycode);
+                    if (code >= 0) {
+                        CallbackBridge.setModifiers(code, press);
+                    }
                 }
                 menu.getBridge().pushEventKey(keycode, keyChar, press);
             }
@@ -446,6 +484,75 @@ public class FCLInput implements View.OnCapturedPointerListener {
     }
 
 
+    /**
+     * 无障碍服务（全局按键过滤）的入口。
+     * <p>
+     * 服务把事件交到这里之前必须先过门控，理由逐条：
+     * <ul>
+     *   <li>服务是全应用生效的，只有游戏在前台时才该接管</li>
+     *   <li>用户可以在设置里关掉，关掉后事件继续走 Activity 的 dispatchKeyEvent 旧路径</li>
+     *   <li>音量/电源键归系统，抢过来会把音量调节搞失效</li>
+     *   <li>手柄按键有自己的映射通道（Gamepad 分支），抢过来会破坏手柄操作</li>
+     *   <li>软键盘来源的事件已由 IME 自己处理，再抢一遍会重复输入</li>
+     *   <li>输入法输入框启用时 BACK 应交给 IME 收起键盘</li>
+     * </ul>
+     *
+     * @return true 表示事件已被游戏消费，系统不再向下派发
+     */
+    public boolean canHandleAccessibilityKey(KeyEvent event) {
+        if (!gameForeground) {
+            return false;
+        }
+        if (menu == null || menu.getMenuSetting() == null
+                || !menu.getMenuSetting().isAccessibilityKeyboard()) {
+            return false;
+        }
+        // 弹窗/对话框打开时游戏窗口会失去窗口焦点：此时按键的归属是那个对话框
+        // （输入名字、改设置、确认退出……），全局过滤必须让开，否则对话框里一个键都按不出来。
+        // 返回 false 只是回到正常的按键派发链路，不会有任何副作用
+        if (menu.getActivity() == null || menu.getActivity().isFinishing()
+                || !menu.getActivity().hasWindowFocus()) {
+            return false;
+        }
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN
+                || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                || keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                || keyCode == KeyEvent.KEYCODE_POWER
+                || keyCode == KeyEvent.KEYCODE_CAMERA) {
+            return false;
+        }
+        if (event.getAction() == KeyEvent.ACTION_MULTIPLE) {
+            return false;
+        }
+        if ((event.getFlags() & KeyEvent.FLAG_SOFT_KEYBOARD) == KeyEvent.FLAG_SOFT_KEYBOARD) {
+            return false;
+        }
+        // 手柄的按键必须留在原来的手柄通道里（Gamepad 映射、按键精灵），
+        // 一旦被全局过滤接管，手柄模式下的按键会直接失效
+        if (Gamepad.isGamepadEvent(event)) {
+            return false;
+        }
+        // 无障碍通道里 event.getSource() 未必可靠，再用设备能力兜一层：
+        // 只接管「确实来自键盘设备」的按键，摇杆/手柄/遥控器等一律不碰
+        InputDevice device = event.getDevice();
+        if (device != null && (device.getSources() & InputDevice.SOURCE_KEYBOARD) == 0) {
+            return false;
+        }
+        // 游戏内文本输入框启用时一律不抢：此时按键的归属是输入法（打字、退格、
+        // Enter 提交、BACK 收键盘），被全局过滤截走就完全打不出字。
+        // 交回正常派发链路，行为与没有本服务时完全一致
+        if (menu.getTouchCharInput() == null || menu.getTouchCharInput().isEnabled()) {
+            return false;
+        }
+        // SDL 渲染路径下文本输入由 SDL 自己的输入框接管，同样不能抢
+        if (SdlBridge.getSdlEnabled() && SdlBridge.isSdlRenderActive()
+                && SDLActivity.isSDLEditKeyboardShown()) {
+            return false;
+        }
+        return true;
+    }
+
     public boolean handleKeyEvent(KeyEvent event) {
         // 快捷键绑定监听中：吞掉所有按键交给 GameMenu 记录，BACK 取消
         if (menu.isKeyBindListening()) {
@@ -492,7 +599,10 @@ public class FCLInput implements View.OnCapturedPointerListener {
             }
             return true;
         }
-        if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+        // 仅当软键盘文本输入框处于启用态时，Enter 才是「提交并关闭输入」。
+        // 原实现无条件吞掉 Enter，导致游戏里所有回车/确认/聊天框发送都被吃掉；
+        // 输入框未启用时必须继续往下走，交给游戏当普通按键
+        if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER && menu.getTouchCharInput().isEnabled()) {
             if (event.getAction() == KeyEvent.ACTION_UP) {
                 menu.getTouchCharInput().hide();
             }
@@ -520,6 +630,11 @@ public class FCLInput implements View.OnCapturedPointerListener {
         if (fclKeycode == FCLKeycodes.KEY_UNKNOWN)
             return (event.getFlags() & KeyEvent.FLAG_FALLBACK) == KeyEvent.FLAG_FALLBACK;
         boolean press = event.getAction() == KeyEvent.ACTION_DOWN;
+        // Caps/Num/Scroll Lock 是锁存键，长按产生的重复按下会让锁存态反复翻转造成抖动，
+        // 重复事件直接丢弃；其余键的重复事件必须放行，否则长按（连走、连退格）失效
+        if (press && event.getRepeatCount() > 0 && isLockKey(event.getKeyCode())) {
+            return true;
+        }
         // SDL 渲染路径（MC 26.3+）不注册 GLFW 字符回调，文本唯一通道是 SDL 文本输入通道，
         // 而该通道只接收 IME 提交，外置键盘按键不会被合成文本。故在通道激活（游戏内文本框
         // 聚焦）时把打印键字符补经 SDL 文本通道提交，与按键事件成对下发，
@@ -535,8 +650,15 @@ public class FCLInput implements View.OnCapturedPointerListener {
         // 物理键盘字符取自设备布局，随 keydown 一次性成对下发；不能再调 sendChar——
         // 那是软键盘纯字符通道，会反查键码补发一对 keydown/keyup，与本按键叠加成双重输入
         int keyChar = press && menu.getCursorMode() == FCLBridge.CursorEnabled ? event.getUnicodeChar() : 0;
-        sendKeyEvent(fclKeycode, keyChar, press);
+        sendKeyEvent(fclKeycode, keyChar, press, event.getRepeatCount() > 0);
         return true;
+    }
+
+    /** 锁存型切换键：重复按下不应改变锁定状态 */
+    private static boolean isLockKey(int androidKeycode) {
+        return androidKeycode == KeyEvent.KEYCODE_CAPS_LOCK
+                || androidKeycode == KeyEvent.KEYCODE_NUM_LOCK
+                || androidKeycode == KeyEvent.KEYCODE_SCROLL_LOCK;
     }
 
     /**

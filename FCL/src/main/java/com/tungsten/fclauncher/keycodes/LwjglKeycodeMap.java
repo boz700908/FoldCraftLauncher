@@ -16,12 +16,19 @@ public class LwjglKeycodeMap {
         KEY_MAP.put(fclKeycode, lwjglKeycode);
     }
 
+    /**
+     * @return 对应的 GLFW 键码，未收录时返回 -1
+     * <p>
+     * 原实现未命中返回 {@link LwjglGlfwKeycode#KEY_UNKNOWN}（0），而 0 也是 GLFW 的有效键值，
+     * 调用方难以区分「没映射」与「映射到 0」，改为 -1 后两个既有调用点
+     * （{@code code <= 0} 与 {@code code >= 0}）的判断语义都正确
+     */
     public static int convertKeycode(int fclKeycode) {
         Integer key = KEY_MAP.get(fclKeycode);
         if (key != null) {
             return key;
         }
-        return LwjglGlfwKeycode.KEY_UNKNOWN;
+        return -1;
     }
 
     static {
@@ -88,7 +95,6 @@ public class LwjglKeycodeMap {
         add(LwjglGlfwKeycode.KEY_SLASH, FCLKeycodes.KEY_SLASH);
         add(LwjglGlfwKeycode.KEY_PAGE_UP, FCLKeycodes.KEY_PAGEUP);
         add(LwjglGlfwKeycode.KEY_PAGE_DOWN, FCLKeycodes.KEY_PAGEDOWN);
-        add(LwjglGlfwKeycode.KEY_ESCAPE, FCLKeycodes.KEY_ESC);
         add(LwjglGlfwKeycode.KEY_LEFT_CONTROL, FCLKeycodes.KEY_LEFTCTRL);
         add(LwjglGlfwKeycode.KEY_RIGHT_CONTROL, FCLKeycodes.KEY_RIGHTCTRL);
         add(LwjglGlfwKeycode.KEY_CAPS_LOCK, FCLKeycodes.KEY_CAPSLOCK);
@@ -126,5 +132,28 @@ public class LwjglKeycodeMap {
         add(LwjglGlfwKeycode.KEY_KP_ENTER, FCLKeycodes.KEY_KPENTER);
         add(LwjglGlfwKeycode.KEY_KP_EQUAL, FCLKeycodes.KEY_KPEQUAL);
         add(LwjglGlfwKeycode.KEY_DELETE, FCLKeycodes.KEY_DELETE);
+        // Win/Super 键
+        add(LwjglGlfwKeycode.KEY_LEFT_SUPER, FCLKeycodes.KEY_LEFTMATA);
+        add(LwjglGlfwKeycode.KEY_RIGHT_SUPER, FCLKeycodes.KEY_RIGHTMETA);
+        add(LwjglGlfwKeycode.KEY_MENU, FCLKeycodes.KEY_MENU);
+        // Android 的 SYSRQ/SCROLL_LOCK 在 FCLKeycodes 里有独立值，GLFW 侧分别对应
+        // PRINT_SCREEN 与 SCROLL_LOCK
+        add(LwjglGlfwKeycode.KEY_PRINT_SCREEN, FCLKeycodes.KEY_SYSRQ);
+        add(LwjglGlfwKeycode.KEY_SCROLL_LOCK, FCLKeycodes.KEY_SCROLLLOCK);
+        // GLFW 没有小键盘逗号键，退化为普通逗号，避免该键完全失效
+        add(LwjglGlfwKeycode.KEY_COMMA, FCLKeycodes.KEY_KPCOMMA);
+        // F13-F24（GLFW 有对应键码，Android 侧由外接键盘的 SYSRQ/F13 等键位触发）
+        add(LwjglGlfwKeycode.KEY_F13, FCLKeycodes.KEY_F13);
+        add(LwjglGlfwKeycode.KEY_F14, FCLKeycodes.KEY_F14);
+        add(LwjglGlfwKeycode.KEY_F15, FCLKeycodes.KEY_F15);
+        add(LwjglGlfwKeycode.KEY_F16, FCLKeycodes.KEY_F16);
+        add(LwjglGlfwKeycode.KEY_F17, FCLKeycodes.KEY_F17);
+        add(LwjglGlfwKeycode.KEY_F18, FCLKeycodes.KEY_F18);
+        add(LwjglGlfwKeycode.KEY_F19, FCLKeycodes.KEY_F19);
+        add(LwjglGlfwKeycode.KEY_F20, FCLKeycodes.KEY_F20);
+        add(LwjglGlfwKeycode.KEY_F21, FCLKeycodes.KEY_F21);
+        add(LwjglGlfwKeycode.KEY_F22, FCLKeycodes.KEY_F22);
+        add(LwjglGlfwKeycode.KEY_F23, FCLKeycodes.KEY_F23);
+        add(LwjglGlfwKeycode.KEY_F24, FCLKeycodes.KEY_F24);
     }
 }

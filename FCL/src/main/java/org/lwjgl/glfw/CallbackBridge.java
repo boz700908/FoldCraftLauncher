@@ -383,24 +383,35 @@ public class CallbackBridge {
 
     public static void setModifiers(int keyCode, boolean isDown) {
         switch (keyCode) {
+            // 左右同义：GLFW 的修饰键位只有一份状态，右侧键位必须一并置位，
+            // 否则右手按 Shift/Ctrl/Alt 时 getCurrentMods() 报不出修饰键，组合键与字符大小写全错
             case LwjglGlfwKeycode.KEY_LEFT_SHIFT:
+            case LwjglGlfwKeycode.KEY_RIGHT_SHIFT:
                 CallbackBridge.holdingShift = isDown;
                 break;
 
             case LwjglGlfwKeycode.KEY_LEFT_CONTROL:
+            case LwjglGlfwKeycode.KEY_RIGHT_CONTROL:
                 CallbackBridge.holdingCtrl = isDown;
                 break;
 
             case LwjglGlfwKeycode.KEY_LEFT_ALT:
+            case LwjglGlfwKeycode.KEY_RIGHT_ALT:
                 CallbackBridge.holdingAlt = isDown;
                 break;
 
+            // Caps/Num Lock 是锁存键：状态在按下时翻转，抬起不改变锁定状态。
+            // 原实现写成 isDown，抬起就把锁定态清掉，等于按一下什么也没锁住
             case LwjglGlfwKeycode.KEY_CAPS_LOCK:
-                CallbackBridge.holdingCapslock = isDown;
+                if (isDown) {
+                    CallbackBridge.holdingCapslock = !CallbackBridge.holdingCapslock;
+                }
                 break;
 
             case LwjglGlfwKeycode.KEY_NUM_LOCK:
-                CallbackBridge.holdingNumlock = isDown;
+                if (isDown) {
+                    CallbackBridge.holdingNumlock = !CallbackBridge.holdingNumlock;
+                }
                 break;
         }
     }
